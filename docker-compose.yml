@@ -1,0 +1,70 @@
+services:
+  api:
+    build:
+      context: ./src/FinancialApi
+      dockerfile: Dockerfile
+    ports:
+      - "8085:8080"
+    depends_on:
+      - fluent-bit
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: 127.0.0.1:24224
+        fluentd-async: 'true'
+        tag: "financial"
+    environment:
+      - ASPNETCORE_URLS=http://+:8080
+
+  billing-service:
+    image: alpine
+    command: /bin/sh -c "while true; do echo '{\"message\":\"Processing billing for ACC_'$(($RANDOM%1000 + 1000))'\", \"status\":\"Success\", \"amount\":'$RANDOM'}' | tee /dev/stderr; sleep 5; done"
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: 127.0.0.1:24224
+        tag: "billing"
+    depends_on:
+      - fluent-bit
+
+  fluent-bit:
+    image: fluent/fluent-bit:3.0.4
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+    volumes:
+      - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
+      - ./fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf
+    depends_on:
+      opensearch-node:
+        condition: service_started
+
+  opensearch-node:
+    image: opensearchproject/opensearch:2.11.0
+    environment:
+      - cluster.name=opensearch-cluster
+      - node.name=opensearch-node
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "plugins.security.disabled=true"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.11.0
+    ports:
+      - "5601:5601"
+    environment:
+      - 'OPENSEARCH_HOSTS=["http://opensearch-node:9200"]'
+      - "DISABLE_SECURITY_DASHBOARDS_PLUGIN=true"
+    depends_on:
+      - opensearch-node
