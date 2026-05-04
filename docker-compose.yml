@@ -1,6 +1,7 @@
 services:
   api:
     build:
+    
       context: ./src/FinancialApi
       dockerfile: Dockerfile
     ports:
